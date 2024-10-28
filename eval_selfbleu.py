@@ -15,7 +15,7 @@ import nltk
 from multiprocessing import Pool
 from vllm import LLM, SamplingParams
 from pathlib import Path
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer
 from vllm.lora.request import LoRARequest
 from nltk.translate.bleu_score import SmoothingFunction
 from abc import abstractmethod
@@ -27,18 +27,18 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 # path_llm = None
 # path_llm = "meta-llama/Meta-Llama-3-8B-Instruct"
-# path_llm = "mistralai/Mistral-7B-Instruct-v0.2"
+path_llm = "mistralai/Mistral-7B-Instruct-v0.2"
 # path_llm = "checkpoints/checkpoint-313"
 #path_llm = "checkpoints/Llama-3-8B-Instruct-SPPO-LoRA-Iter1"
 #path_llm = "checkpoints/Mistral-7B-Instruct-SPPO-Iter3"
 #path_llm = "checkpoints/Mis7B-It-SPPO-LoRA128-Iter1"
 #path_llm = "checkpoints/Mis7B-It-SPPO-LoRA64-Iter1"
 # path_llm = "checkpoints/Mistral-7B-It-SPPO-LoRA8-Iter3"
-path_llm = "google/gemma-2b-it"
+# path_llm = "google/gemma-2b-it"
 
 USE_LORA = False
-name_file = "test0-selfbleu-gemma2bit"
-num_samples = 4 # number of responses per prompt for estimating diversity
+name_file = "test0-selfbleu-mistral7bit"
+num_samples = 16 # number of responses per prompt for estimating diversity
 max_examples = -1 # Set this to a positive value to test on smaller number of prompts
 
 class Metrics:
@@ -135,6 +135,16 @@ class SelfBleu(Metrics):
         pool.join()
         return score / cnt
 
+# if "mistral" in model_path.lower():
+#     tokenizer = LlamaTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
+# elif "llama-3" in model_path.lower():
+#     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
+# elif "gemma-2" in model_path.lower():
+#     tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b-it")
+# else:
+#     raise ValueError("Model not supported")
+# tokenizer.pad_token = tokenizer.eos_token
+
 if USE_LORA:
     with open(path_llm + "/adapter_config.json", 'r') as json_data:
         config_adapter = json.load(json_data)
@@ -150,17 +160,29 @@ if USE_LORA:
 else:
     llm = LLM(
       model=path_llm, 
+      revision="1296dc8fd9b21e6424c9c305c06db9ae60c03ace",
+      tokenizer_revision="1296dc8fd9b21e6424c9c305c06db9ae60c03ace",
       tensor_parallel_size=1,
     )
 
-tokenizer = AutoTokenizer.from_pretrained(path_llm)
+# tokenizer = AutoTokenizer.from_pretrained(path_llm)
+# tokenizer.pad_token = tokenizer.eos_token
+
+if "mistral" in path_llm.lower():
+    tokenizer = LlamaTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
+elif "llama-3" in path_llm.lower():
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
+elif "gemma-2" in path_llm.lower():
+    tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b-it")
+else:
+    raise ValueError("Model not supported")
 tokenizer.pad_token = tokenizer.eos_token
 
 # Load evaluation dataset for AlpacaEval
 eval_set = datasets.load_dataset(
     "tatsu-lab/alpaca_eval", 
     "alpaca_eval", 
-    trust_remote_code=True
+    # trust_remote_code=True
 )["eval"]
 
 # Generate evaluation responses from the model

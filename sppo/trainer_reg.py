@@ -161,9 +161,7 @@ class SPPORegTrainer(Trainer):
         model_adapter_name: str = None,
         ref_adapter_name: str = None,
         reg_coef: float = 1,
-        sft_dataset: Optional[Dataset] = None,
     ):
-        self.sft_dataset = sft_dataset
         assert isinstance(model, str)
         self.last_iter_model = AutoModelForCausalLM.from_pretrained(model, **model_init_kwargs).eval()
         if model_init_kwargs is None:
@@ -1060,7 +1058,7 @@ class SPPORegTrainer(Trainer):
                     ) = self.concatenated_forward(self.ref_model, batch)
 
         if 'forward' in self.loss_type:
-            input_text = self.sft_dataset['train']['chosen']
+            input_text = batch['reference_response']
             tokenized = self.tokenizer(input_text, return_tensors="pt", padding=True, truncation=True)
             input_ids = tokenized["input_ids"].to(self.model.device)
             attention_mask = tokenized["attention_mask"].to(self.model.device)

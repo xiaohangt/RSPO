@@ -1077,6 +1077,8 @@ class SPPORegTrainer(Trainer):
 
             # Mask padding:
             model_logp_reference_responses = model_logp_reference_responses * attention_mask[:, 1:]
+        else:
+            model_logp_reference_responses = None
 
         losses, chosen_rewards, rejected_rewards, reg_loss = self.sppo_loss(
             policy_chosen_logps,
@@ -1088,6 +1090,7 @@ class SPPORegTrainer(Trainer):
             chosen_probs,
             chosen_probs_win,
             chosen_probs_lose,
+            model_logp_reference_responses=model_logp_reference_responses,
             # rejected_probs,
         )
         reward_accuracies = (chosen_rewards > rejected_rewards).float()

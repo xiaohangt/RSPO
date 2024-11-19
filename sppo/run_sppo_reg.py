@@ -200,10 +200,13 @@ def main_inner(model_args, data_args, training_args):
         sft_data_args.dataset_mixer = {f'synthetic_data_reference-iter{current_iter}_score': 1.0}
         sft_dataset = get_datasets(sft_data_args, splits=["train"])
 
+        reference_response = sft_dataset['train']["reference_response"]
+        raw_datasets['train'] = raw_datasets['train'].add_column("reference_response", reference_response)
+    else:
+        sft_dataset = None
+
     model, ref_model, model_kwargs, ref_model_kwargs = setup_model(model_args, training_args)
 
-    reference_response = sft_dataset['train']["reference_response"]
-    raw_datasets['train'] = raw_datasets['train'].add_column("reference_response", reference_response)
 
     trainer = SPPORegTrainer(
         model,

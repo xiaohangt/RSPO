@@ -904,14 +904,32 @@ class SPPORegTrainer(Trainer):
         #     reg_loss = - policy_chosen_logps.mean()  # loss for regularization
         elif self.loss_type == "sppo_forward":
             reg_loss = - model_logp_reference_responses.mean()
-        elif self.loss_type == "sppo_forwardimportance10":
+        elif self.loss_type.startswith("sppo_forwardimportance"):
+            # sppo_forwardimportance10 means R=10
             # \nable_\theta \mathbb{E}_{pi}[\mu(y) / \pi_theta(y)]
-            R = 10
+            R = int(self.loss_type.replace("sppo_forwardimportance", ""))
             pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
             pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
             reg_loss = (pi_ref_over_pi_w).mean() + (pi_ref_over_pi_l).mean()
         elif self.loss_type == "sppo_reversekl":
             reg_loss = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+        elif self.loss_type == "sppo_forwardreverse":
+            R = 10
+            pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
+            pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
+            forward = pi_ref_over_pi_w.mean() + pi_ref_over_pi_l.mean()
+            reverse = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+            reg_loss = forward + reverse
+        elif self.loss_type.startswith("sppo_forward1reverse"):
+            # sorry this is a bit hacky...
+            # self.loss_type = "sppo_forward1reverse20" : means reverse is 20 times of forward
+            reverse_coef = float(self.loss_type.replace("sppo_forward1reverse", ""))
+            R = 10
+            pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
+            pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
+            forward = pi_ref_over_pi_w.mean() + pi_ref_over_pi_l.mean()
+            reverse = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+            reg_loss = forward + reverse_coef * reverse
         elif self.loss_type == "sppo_entropy":
             reg_loss = (policy_chosen_logps ** 2).mean() + (policy_rejected_logps ** 2).mean()
         elif self.loss_type == "sppo_chisq10":

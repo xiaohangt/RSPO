@@ -161,9 +161,7 @@ class SPPORegTrainer(Trainer):
         model_adapter_name: str = None,
         ref_adapter_name: str = None,
         reg_coef: float = 1,
-        sft_dataset: Optional[Dataset] = None,
     ):
-        self.sft_dataset = sft_dataset
         assert isinstance(model, str)
         self.last_iter_model = AutoModelForCausalLM.from_pretrained(model, **model_init_kwargs).eval()
         if model_init_kwargs is None:
@@ -906,12 +904,45 @@ class SPPORegTrainer(Trainer):
         #     reg_loss = - policy_chosen_logps.mean()  # loss for regularization
         elif self.loss_type == "sppo_forward":
             reg_loss = - model_logp_reference_responses.mean()
-        # elif self.loss_type == "sppo_forward_importance":
-        #     reg_loss = (logits_diff_w).exp().mean() + (logits_diff_l).exp().mean()
+        elif self.loss_type.startswith("sppo_forwardimportance"):
+            # sppo_forwardimportance10 means R=10
+            # \nable_\theta \mathbb{E}_{pi}[\mu(y) / \pi_theta(y)]
+            R = int(self.loss_type.replace("sppo_forwardimportance", ""))
+            pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
+            pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
+            reg_loss = (pi_ref_over_pi_w).mean() + (pi_ref_over_pi_l).mean()
         elif self.loss_type == "sppo_reversekl":
             reg_loss = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+        elif self.loss_type == "sppo_forwardreverse":
+            R = 10
+            pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
+            pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
+            forward = pi_ref_over_pi_w.mean() + pi_ref_over_pi_l.mean()
+            reverse = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+            reg_loss = forward + reverse
+        elif self.loss_type.startswith("sppo_forward1reverse"):
+            # sorry this is a bit hacky...
+            # self.loss_type = "sppo_forward1reverse20" : means reverse is 20 times of forward
+            reverse_coef = float(self.loss_type.replace("sppo_forward1reverse", ""))
+            R = 10
+            pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
+            pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
+            forward = pi_ref_over_pi_w.mean() + pi_ref_over_pi_l.mean()
+            reverse = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+            reg_loss = forward + reverse_coef * reverse
         elif self.loss_type == "sppo_entropy":
             reg_loss = (policy_chosen_logps ** 2).mean() + (policy_rejected_logps ** 2).mean()
+        elif self.loss_type == "sppo_chisq10":
+            # \mathbb{E}_{pi}[\nabla_\theta \pi_\theta(y) / \pi_ref (y)
+            R = 10
+            reg_loss = (logits_diff_w).clamp(min=None, max=R).exp().mean() + (logits_diff_l).clamp(min=None, max=R).exp().mean()
+        elif self.loss_type == "sppo_chisqsm1":
+            # \mathbb{E}_{pi}[pi / (pi_ref + eta * pi)]
+            R = 10
+            eta = 1
+            pi_over_pi_ref_w = logits_diff_w.clamp(min=None, max=R).exp()
+            pi_over_pi_ref_l = logits_diff_l.clamp(min=None, max=R).exp()
+            reg_loss = (pi_over_pi_ref_w / (1 + eta * pi_over_pi_ref_w)).mean() + (pi_over_pi_ref_l / (1 + eta * pi_over_pi_ref_l)).mean()
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
 
@@ -1060,7 +1091,7 @@ class SPPORegTrainer(Trainer):
                     ) = self.concatenated_forward(self.ref_model, batch)
 
         if 'forward' in self.loss_type:
-            input_text = self.sft_dataset['train']['chosen']
+            input_text = batch['reference_response']
             tokenized = self.tokenizer(input_text, return_tensors="pt", padding=True, truncation=True)
             input_ids = tokenized["input_ids"].to(self.model.device)
             attention_mask = tokenized["attention_mask"].to(self.model.device)
@@ -1079,6 +1110,8 @@ class SPPORegTrainer(Trainer):
 
             # Mask padding:
             model_logp_reference_responses = model_logp_reference_responses * attention_mask[:, 1:]
+        else:
+            model_logp_reference_responses = None
 
         losses, chosen_rewards, rejected_rewards, reg_loss = self.sppo_loss(
             policy_chosen_logps,
@@ -1090,6 +1123,7 @@ class SPPORegTrainer(Trainer):
             chosen_probs,
             chosen_probs_win,
             chosen_probs_lose,
+            model_logp_reference_responses=model_logp_reference_responses,
             # rejected_probs,
         )
         reward_accuracies = (chosen_rewards > rejected_rewards).float()
@@ -1103,6 +1137,8 @@ class SPPORegTrainer(Trainer):
         metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.detach().mean().cpu()
         metrics[f"{prefix}logits/rejected"] = policy_rejected_logits.detach().mean().cpu()
         metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().mean().cpu()
+        metrics[f"{prefix}ref_logps/chosen"] = reference_chosen_logps.detach().mean().cpu()
+        metrics[f"{prefix}ref_logps/rejected"] = reference_rejected_logps.detach().mean().cpu()
 
         # reg loss
         metrics["reg/reg_loss"] = reg_loss.mean().cpu()

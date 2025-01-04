@@ -72,7 +72,7 @@ def apply_chat_template(
 def get_datasets(
     data_config: DataArguments | dict,
     splits: List[str] = ["train", "test"],
-    shuffle: bool = True,
+    shuffle: bool = False,
 ) -> DatasetDict:
     """
     Loads one or more datasets with varying training set proportions.

@@ -63,14 +63,12 @@ def load_and_process_datasets(data_args, tokenizer):
         desc="Formatting comparisons with prompt template",
     )
 
-    ## SFT dataset for forward KL regularization
-    # sft_data_args = DataArguments(dataset_mixer={'../synthetic_data_fixedprompt1-mistral-7b-instruct-sppo-iter1_score': 1.0})
-    # sft_datasets = get_datasets(sft_data_args, splits=["train"])
-
     for split in ["train"]:
         raw_datasets[split] = raw_datasets[split].rename_columns(
             {"text_prompt": "prompt", "text_chosen": "chosen", "text_rejected": "rejected"}
         )
+    # if data_args.size_train > 0:
+    #     raw_datasets["train"] = raw_datasets["train"].select(range(data_args.size_train))
 
     return raw_datasets
 
@@ -190,6 +188,8 @@ def main_inner(model_args, data_args, training_args):
         logger.info(f"Checkpoint detected, resuming training at {last_checkpoint=}.")
 
     set_seed(training_args.seed)
+    current_iter = int(training_args.output_dir[-1]) % 3
+    current_iter = current_iter if current_iter > 0 else 3
 
     data_args.truncation_side = "left"
     tokenizer = get_tokenizer(model_args, data_args)
@@ -197,10 +197,16 @@ def main_inner(model_args, data_args, training_args):
 
     if "forward" in training_args.loss_type:
         sft_data_args = deepcopy(data_args)
-        sft_data_args.dataset_mixer = {'synthetic_data_mis7b-it-sppo-lora8-iter1_score': 1.0}
-        sft_dataset = load_and_process_datasets(sft_data_args, tokenizer)
+        sft_data_args.dataset_mixer = {f'synthetic_data_reference-iter{current_iter}_score': 1.0}
+        sft_dataset = get_datasets(sft_data_args, splits=["train"])
+
+        reference_response = sft_dataset['train']["reference_response"]
+        raw_datasets['train'] = raw_datasets['train'].add_column("reference_response", reference_response)
+    else:
+        sft_dataset = None
 
     model, ref_model, model_kwargs, ref_model_kwargs = setup_model(model_args, training_args)
+
 
     trainer = SPPORegTrainer(
         model,
@@ -216,7 +222,6 @@ def main_inner(model_args, data_args, training_args):
         peft_config=get_peft_config(model_args),
         loss_type=training_args.loss_type,
         reg_coef=training_args.reg_coef,
-        sft_dataset=sft_dataset,
     )
 
     train_and_evaluate(trainer, raw_datasets, training_args)

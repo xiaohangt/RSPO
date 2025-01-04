@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import time
+import argparse
 
 import datasets
 import os
@@ -20,26 +21,26 @@ from vllm.lora.request import LoRARequest
 from nltk.translate.bleu_score import SmoothingFunction
 from abc import abstractmethod
 
+
 nltk.download("punkt_tab")
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
-# path_llm = None
-# path_llm = "meta-llama/Meta-Llama-3-8B-Instruct"
-path_llm = "mistralai/Mistral-7B-Instruct-v0.2"
-# path_llm = "checkpoints/checkpoint-313"
-#path_llm = "checkpoints/Llama-3-8B-Instruct-SPPO-LoRA-Iter1"
-#path_llm = "checkpoints/Mistral-7B-Instruct-SPPO-Iter3"
-#path_llm = "checkpoints/Mis7B-It-SPPO-LoRA128-Iter1"
-#path_llm = "checkpoints/Mis7B-It-SPPO-LoRA64-Iter1"
-# path_llm = "checkpoints/Mistral-7B-It-SPPO-LoRA8-Iter3"
-# path_llm = "google/gemma-2b-it"
-
 USE_LORA = False
-name_file = "test0-selfbleu-mistral7bit"
 num_samples = 16 # number of responses per prompt for estimating diversity
 max_examples = -1 # Set this to a positive value to test on smaller number of prompts
+seed = 2025
+sample_size = 200
+max_tokens = min(sample_size, 2048)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('path_llm', type=str)
+parser.add_argument('seed', type=int)
+args = parser.parse_args()
+settings = {
+    args.path_llm: [args.seed]
+}
 
 class Metrics:
     def __init__(self):
@@ -56,12 +57,12 @@ class Metrics:
         pass
 
 class SelfBleu(Metrics):
-    def __init__(self, test_text:list=[], gram=3):
+    def __init__(self, test_text:list=[], gram=3, sample_size=500):
         super().__init__()
         self.name = 'Self-Bleu'
         self.test_data = test_text
         self.gram = gram
-        self.sample_size = 500
+        self.sample_size = sample_size
         self.reference = None
         self.is_first = True
 
@@ -135,130 +136,152 @@ class SelfBleu(Metrics):
         pool.join()
         return score / cnt
 
-# if "mistral" in model_path.lower():
-#     tokenizer = LlamaTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
-# elif "llama-3" in model_path.lower():
-#     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
-# elif "gemma-2" in model_path.lower():
-#     tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b-it")
-# else:
-#     raise ValueError("Model not supported")
-# tokenizer.pad_token = tokenizer.eos_token
+for path_llm in settings.keys():
+    name_llm = path_llm.split("/")[-1]
+    name_file = "selfbleu-" + name_llm
 
-if USE_LORA:
-    with open(path_llm + "/adapter_config.json", 'r') as json_data:
-        config_adapter = json.load(json_data)
-        print(config_adapter)
+    for seed in settings[path_llm]:
+        name_run = name_file + f"seed{seed}"
     
-    path_basemodel = config_adapter['base_model_name_or_path']
-    llm = LLM(
-      model=path_basemodel, 
-      tensor_parallel_size=1,
-      enable_lora=True,
-      max_lora_rank=config_adapter["r"]
-    )
-else:
-    llm = LLM(
-      model=path_llm, 
-      revision="1296dc8fd9b21e6424c9c305c06db9ae60c03ace",
-      tokenizer_revision="1296dc8fd9b21e6424c9c305c06db9ae60c03ace",
-      tensor_parallel_size=1,
-    )
-
-# tokenizer = AutoTokenizer.from_pretrained(path_llm)
-# tokenizer.pad_token = tokenizer.eos_token
-
-if "mistral" in path_llm.lower():
-    tokenizer = LlamaTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
-elif "llama-3" in path_llm.lower():
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
-elif "gemma-2" in path_llm.lower():
-    tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b-it")
-else:
-    raise ValueError("Model not supported")
-tokenizer.pad_token = tokenizer.eos_token
-
-# Load evaluation dataset for AlpacaEval
-eval_set = datasets.load_dataset(
-    "tatsu-lab/alpaca_eval", 
-    "alpaca_eval", 
-    # trust_remote_code=True
-)["eval"]
-
-# Generate evaluation responses from the model
-cols = ["model", "prompt", "score_selfBLEU"] + ["response" + str(i+1) for i in range(num_samples)]
-res = list()
-sampling_params = SamplingParams(
-    temperature=0.7,
-    top_p=0.9,
-    seed=2024,
-    max_tokens=2048, # set it to higher value like 2048 for proper test
-    n=num_samples
-)
-
-time_start = time.time()
-
-idx_examples = 0
-for example in eval_set:
-    ''' Tested with
-        - Meta-Llama-3-8B
-        - Mistral-7B-Instruct-v0.2
-    '''
-    prompt_template = tokenizer.apply_chat_template(
-        [
-            {"role": "user", "content": example["instruction"]}, 
-            {"role": "assistant", "content": "None"}
-        ],
-        tokenize=False, add_generate_prompt=True
-    ).split("None")[0]
-
-    if USE_LORA:
-        outputs = llm.generate(
-            prompt_template,
-            sampling_params,
-            lora_request=LoRARequest("sql_adapter", 1, path_llm)
-        )
-    else:
-        outputs = llm.generate(
-            prompt_template,
-            sampling_params
-        )
-
-    outputs = [
-        output1.text for output0 in outputs for output1 in output0.outputs
-    ]
-
-    # evaluate self-BLEU
-    sb = SelfBleu(outputs).get_score()
-    
-    res.append([path_llm, prompt_template, sb] + outputs)
-
-    idx_examples += 1
-    if max_examples > 0 and idx_examples == max_examples:
-        break
-
-time_elapsed = time.time() - time_start
-print(f"{time_elapsed / 3600:.2f} hours passed to finish generating {idx_examples} responses ({num_samples} responses per prompt)")
-
-# Save generated responses
-path_savedir = "./results_selfbleu/"
-os.makedirs(path_savedir, exist_ok=True)
-df = pd.DataFrame(res, columns=cols)
-df.to_csv(path_savedir + "results_" + name_file + ".csv", index=False)
-mean_sb = df["score_selfBLEU"].mean()
-
-with open(path_savedir + "summary_" + name_file + ".txt", "w") as fp:
-    fp.write(f"""
-        used model: {path_llm}
-        USE_LORA: {USE_LORA}
-        name_file: {name_file}
-        num_samples: {num_samples}
-        max_examples: {idx_examples}
+        if USE_LORA:
+            with open(path_llm + "/adapter_config.json", 'r') as json_data:
+                config_adapter = json.load(json_data)
+                print(config_adapter)
+            
+            path_basemodel = config_adapter['base_model_name_or_path']
+            llm = LLM(
+              model=path_basemodel, 
+              tensor_parallel_size=1,
+              enable_lora=True,
+              max_lora_rank=config_adapter["r"]
+            )
+        else:
+            llm = LLM(
+              model=path_llm, 
+              # revision="1296dc8fd9b21e6424c9c305c06db9ae60c03ace",
+              # tokenizer_revision="1296dc8fd9b21e6424c9c305c06db9ae60c03ace",
+              tensor_parallel_size=1,
+            )
         
-        =====
-        {time_elapsed / 3600:.2f} hours passed to finish generating {idx_examples} responses ({num_samples} responses per prompt)
-        mean self-BLEU score: {mean_sb} (lower score means more diverse responses)
-    """)
+        # tokenizer = AutoTokenizer.from_pretrained(path_llm)
+        # tokenizer.pad_token = tokenizer.eos_token
+        
+        if "mistral" in path_llm.lower():
+            tokenizer = LlamaTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
+        elif "llama-3" in path_llm.lower():
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
+        elif "gemma-2" in path_llm.lower():
+            tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b-it")
+        else:
+            raise ValueError("Model not supported")
+        tokenizer.pad_token = tokenizer.eos_token
+        
+        # Load evaluation dataset for AlpacaEval
+        eval_set = datasets.load_dataset(
+            "tatsu-lab/alpaca_eval", 
+            "alpaca_eval", 
+            # trust_remote_code=True
+        )["eval"]
+        
+        # Generate evaluation responses from the model
+        cols = ["model", "prompt", "score_selfBLEU"] + ["response" + str(i+1) for i in range(num_samples)]
+        res = list()
+        sampling_params = SamplingParams(
+            temperature=0.7,
+            top_p=0.9,
+            seed=seed,
+            max_tokens=max_tokens, # set it to higher value like 2048 for proper test
+            n=num_samples
+        )
+        
+        time_start = time.time()
+        
+        idx_examples = 0
+        for example in eval_set:
+            ''' Tested with
+                - Meta-Llama-3-8B
+                - Mistral-7B-Instruct-v0.2
+            '''
+            prompt_template = tokenizer.apply_chat_template(
+                [
+                    {"role": "user", "content": example["instruction"]}, 
+                    {"role": "assistant", "content": "None"}
+                ],
+                tokenize=False, add_generate_prompt=True
+            ).split("None")[0]
+        
+            if USE_LORA:
+                outputs = llm.generate(
+                    prompt_template,
+                    sampling_params,
+                    lora_request=LoRARequest("sql_adapter", 1, path_llm)
+                )
+            else:
+                outputs = llm.generate(
+                    prompt_template,
+                    sampling_params
+                )
+        
+            outputs = [
+                output1.text for output0 in outputs for output1 in output0.outputs
+            ]
+        
+            # evaluate self-BLEU
+            sb = SelfBleu(outputs, sample_size=sample_size).get_score()
+            
+            res.append([path_llm, prompt_template, sb] + outputs)
+        
+            idx_examples += 1
+            if max_examples > 0 and idx_examples == max_examples:
+                break
+        
+        time_elapsed = time.time() - time_start
+        print(f"{time_elapsed / 3600:.2f} hours passed to finish generating {idx_examples} responses ({num_samples} responses per prompt)")
+        
+        # Save generated responses
+        path_savedir = "./results_selfbleu/"
+        os.makedirs(path_savedir, exist_ok=True)
+        df = pd.DataFrame(res, columns=cols)
+        df.to_csv(path_savedir + "results_" + name_file + f"_seed{seed}.csv", index=False)
+        mean_sb = df["score_selfBLEU"].mean()
+        
+        with open(path_savedir + "summary_" + name_file + f"_seed{seed}.txt", "w") as fp:
+            fp.write(f"""
+                used model: {path_llm}
+                USE_LORA: {USE_LORA}
+                name_file: {name_file}
+                num_samples: {num_samples}
+                max_examples: {idx_examples}
+                
+                =====
+                {time_elapsed / 3600:.2f} hours passed to finish generating {idx_examples} responses ({num_samples} responses per prompt)
+                mean self-BLEU score: {mean_sb} (lower score means more diverse responses)
+            """)
+
+        # append to the existing .csv file
+        row = {
+            "model": path_llm,
+            "seed": seed,
+            "SelfBLEU": mean_sb
+        }
+        path_summary = path_savedir + "summary.csv"
+        if os.path.exists(path_summary):
+            df_summary = pd.read_csv(path_summary)
+            df_summary = pd.concat([
+                df_summary,
+                pd.DataFrame([row])
+            ])
+        else:
+            df_summary = pd.DataFrame([row])
+
+        df_summary.to_csv(path_summary, index=False)
+
+        del llm
+        del res
+        del df
+        torch.cuda.empty_cache()
+        
+            
 
 
     

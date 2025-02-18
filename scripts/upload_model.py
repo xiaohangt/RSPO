@@ -81,7 +81,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 print(model_name)
 model_name = model_name.split('/')[-1]
 print(model_name)
-model.push_to_hub(f'RegularizedSelfPlay/{model_name}')
+model.push_to_hub(f'RegularizedSelfPlay/{model_name}', private=True)
 
 tokenizer = get_tokenizer(model_args, data_args)
-tokenizer.push_to_hub(f'RegularizedSelfPlay/{model_name}')
+tokenizer.push_to_hub(f'RegularizedSelfPlay/{model_name}', private=True)

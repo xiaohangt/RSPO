@@ -13,8 +13,8 @@ NUM=18
 MODEL="mistralai/Mistral-7B-Instruct-v0.2"
 REF_MODEL="mistralai/Mistral-7B-Instruct-v0.2"
 DATASET="synthetic_data_mistral-7b-instruct-sppo-iter1_score"
-BATCH_SIZE=8
-ACCUMULATE=1
+BATCH_SIZE=4
+ACCUMULATE=4
 # regularization coefficient
 REG_COEF=0.1
 
@@ -80,6 +80,13 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+if [[ "$MODEL" == *"Llama"* ]]; then
+    REF_MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
+else
+    REF_MODEL="mistralai/Mistral-7B-Instruct-v0.2"
+fi
+
+
 PREF="${PREF}_${NUM}"
 
 LEVEL1="iter${ITER}_${LEARNING_RATE}_beta${BETA}_${OPTIM}"
@@ -101,7 +108,7 @@ echo "logging to $log_file.log"
 # --main_process_port ${port} \
 
 ACCELERATE_LOG_LEVEL=info accelerate launch \
-    --config_file recipes/accelerate_configs/deepspeed_zero3.yaml \
+    --config_file recipes/accelerate_configs/deepspeed_zero3_4gpu.yaml \
     --main_process_port 2930 \
     sppo/run_sppo_reg.py "$new_config_file" \
     --learning_rate=$LEARNING_RATE \
@@ -116,5 +123,6 @@ ACCELERATE_LOG_LEVEL=info accelerate launch \
     --num_train_epochs=$NUM \
     --reg_coef=$REG_COEF \
     --ref_model_name_or_path=$REF_MODEL 
+    # --config_file recipes/accelerate_configs/deepspeed_zero3.yaml \
 
 # 2>&1 | tee "${log_file}.log"

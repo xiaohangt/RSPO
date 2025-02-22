@@ -1,10 +1,10 @@
 #!/bin/bash
 iter_num=3
-for i in $(seq 1 $iter_num); do
+for i in $(seq 3 $iter_num); do
     if [ "$i" -eq 1 ]; then
         MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
     else
-        MODEL=$OUTPUT_DIR
+        MODEL="checkpoints/Llama-3-8B-Instruct-SPPO-Iter$((i-1))"
     fi
     OUTPUT_DIR="checkpoints/Llama-3-8B-Instruct-SPPO-Iter${i}"
     PROMPT="UCLA-AGI/data-mistral-7b-instruct-sppo-iter${i}"

@@ -19,13 +19,14 @@ for i in $(seq 1 $iter_num); do
     if [ "$i" -eq 1 ]; then
         MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
     else
-        MODEL="checkpoints/${LOSS_TYPE}-${REG_COEF}-PromptABC-LLAMA-3-8B-Instruct-SPPO-Iter$((i-1))"
+        MODEL="checkpoints/${LOSS_TYPE}-${REG_COEF}-Llama-3-8B-Instruct-RSPO-Iter$((i-1))"
     fi
-    OUTPUT_DIR="checkpoints/${LOSS_TYPE}-${REG_COEF}-PromptABC-LLAMA-3-8B-Instruct-SPPO-Iter${i}"
+    OUTPUT_DIR="checkpoints/${LOSS_TYPE}-${REG_COEF}-Llama-3-8B-Instruct-RSPO-Iter${i}"
     PROMPT_NUM=$(( (i - 1) % 3 + 1 ))
-    PROMPT="UCLA-AGI/data-llama-3-8b-instruct-sppo-iter${PROMPT_NUM}"
-    OUT="data-${LOSS_TYPE}-${REG_COEF}-promptABC-llama-3-8b-instruct-sppo-iter${i}"
-    DATASET_DIR="synthetic_data_${LOSS_TYPE}-${REG_COEF}-promptABC-llama-3-8b-instruct-sppo-iter${i}_score"
+    # PROMPT="UCLA-AGI/data-llama-3-8b-instruct-sppo-iter${PROMPT_NUM}"
+    PROMPT="UCLA-AGI/data-mistral-7b-instruct-sppo-iter${i}"
+    OUT="data-${LOSS_TYPE}-${REG_COEF}-llama-3-8b-instruct-rspo-iter${i}"
+    DATASET_DIR="synthetic_data_${LOSS_TYPE}-${REG_COEF}-llama-3-8b-instruct-rspo-iter${i}_score"
 
     bash scripts/generate.sh --model $MODEL --prompt $PROMPT --out_path $OUT
     bash scripts/pipeline_reg.sh --model $MODEL --iter $i \

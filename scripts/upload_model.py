@@ -1,3 +1,10 @@
+"""
+a very crappy script to upload a model to the hub.
+Usage:
+python scripts/upload_model.py --model_name_or_path checkpoints/sppo_reverseklnoent-0.5-PromptABC-Mistral-7B-Instruct-SPPO-Iter2 --output_dir .
+
+The "output_dir" option is a placeholder just to make the script work.
+"""
 import logging
 import torch
 import sys
@@ -81,7 +88,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 print(model_name)
 model_name = model_name.split('/')[-1]
 print(model_name)
-model.push_to_hub(f'RegularizedSelfPlay/{model_name}', private=True)
+model.push_to_hub(f'RegularizedSelfPlay/{model_name}', private=False)
 
 tokenizer = get_tokenizer(model_args, data_args)
-tokenizer.push_to_hub(f'RegularizedSelfPlay/{model_name}', private=True)
+tokenizer.push_to_hub(f'RegularizedSelfPlay/{model_name}', private=False)

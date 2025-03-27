@@ -913,6 +913,8 @@ class SPPORegTrainer(Trainer):
             reg_loss = (pi_ref_over_pi_w).mean() + (pi_ref_over_pi_l).mean()
         elif self.loss_type == "sppo_reversekl":
             reg_loss = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+        elif self.loss_type == "sppo_reverseklnoent":
+            reg_loss = -(policy_chosen_logps * reference_chosen_logps).mean() - (policy_rejected_logps * reference_rejected_logps).mean()
         elif self.loss_type == "sppo_forwardreverse":
             R = 10
             pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()

@@ -1,9 +1,11 @@
 set -e
 set -x
 
-export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
-AVAILABLE_GPUS=(0 1 2 3 4 5 6 7)
-HF_ORG=UCLA-AGI
+# export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
+# AVAILABLE_GPUS=(0 1 2 3 4 5 6 7)
+export CUDA_VISIBLE_DEVICES="0,5,6,7"
+AVAILABLE_GPUS=(0 1 2 3)
+HF_ORG=swyoontestorg
 
 MODEL="mistralai/Mistral-7B-Instruct-v0.2"
 OUTDIR="data-mistral-7b-instruct-sppo-iter1"

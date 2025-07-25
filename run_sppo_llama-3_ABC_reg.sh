@@ -2,16 +2,18 @@
 # script for running the regularized SPPO with LLAMA-3-8B-Instruct
 
 #### Best ReverseKL
-LOSS_TYPE=sppo_reversekl
-REG_COEF=0.5
+# LOSS_TYPE=sppo_reversekl
+# REG_COEF=0.5
 
 #### Best ForwardKL
-# LOSS_TYPE=sppo_forwardimportance10
-# REG_COEF=0.1
+LOSS_TYPE=sppo_forwardimportance10
+REG_COEF=0.1
 
 #### Best ForwardKL + ReverseKL
 # LOSS_TYPE=sppo_forward1reverse5
 # REG_COEF=0.1
+# LOSS_TYPE=sppo_forward1reverse50
+# REG_COEF=0.01
 
 iter_num=3
 for i in $(seq 1 $iter_num); do

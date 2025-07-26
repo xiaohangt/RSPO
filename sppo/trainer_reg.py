@@ -1092,7 +1092,7 @@ class SPPORegTrainer(Trainer):
                         _,
                     ) = self.concatenated_forward(self.ref_model, batch)
 
-        if 'forward' in self.loss_type:
+        if 'forward' in self.loss_type and 'importance' not in self.loss_type:
             input_text = batch['reference_response']
             tokenized = self.tokenizer(input_text, return_tensors="pt", padding=True, truncation=True)
             input_ids = tokenized["input_ids"].to(self.model.device)

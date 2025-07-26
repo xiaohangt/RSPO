@@ -195,7 +195,7 @@ def main_inner(model_args, data_args, training_args):
     tokenizer = get_tokenizer(model_args, data_args)
     raw_datasets = load_and_process_datasets(data_args, tokenizer)
 
-    if "forward" in training_args.loss_type:
+    if "forward" in training_args.loss_type and 'importance' not in training_args.loss_type:
         sft_data_args = deepcopy(data_args)
         sft_data_args.dataset_mixer = {f'synthetic_data_reference-iter{current_iter}_score': 1.0}
         sft_dataset = get_datasets(sft_data_args, splits=["train"])

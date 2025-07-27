@@ -932,6 +932,17 @@ class SPPORegTrainer(Trainer):
             forward = pi_ref_over_pi_w.mean() + pi_ref_over_pi_l.mean()
             reverse = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
             reg_loss = forward + reverse_coef * reverse
+        elif self.loss_type.startswith("sppo_forward1R5reverse"):
+            # sorry this is a bit hacky...
+            # self.loss_type = "sppo_forward1R5reverse20" : means reverse is 20 times of forward
+            reverse_coef = float(self.loss_type.replace("sppo_forward1R5reverse", ""))
+            R = 5
+            pi_ref_over_pi_w = (-logits_diff_w).clamp(min=None, max=R).exp()
+            pi_ref_over_pi_l = (-logits_diff_l).clamp(min=None, max=R).exp()
+            forward = pi_ref_over_pi_w.mean() + pi_ref_over_pi_l.mean()
+            reverse = (logits_diff_w ** 2).mean() + (logits_diff_l ** 2).mean()
+            reg_loss = forward + reverse_coef * reverse
+
         elif self.loss_type == "sppo_entropy":
             reg_loss = (policy_chosen_logps ** 2).mean() + (policy_rejected_logps ** 2).mean()
         elif self.loss_type == "sppo_chisq10":
@@ -1092,7 +1103,7 @@ class SPPORegTrainer(Trainer):
                         _,
                     ) = self.concatenated_forward(self.ref_model, batch)
 
-        if 'forward' in self.loss_type and 'importance' not in self.loss_type:
+        if 'forward' in self.loss_type and 'importance' not in self.loss_type and 'reverse' not in self.loss_type:
             input_text = batch['reference_response']
             tokenized = self.tokenizer(input_text, return_tensors="pt", padding=True, truncation=True)
             input_ids = tokenized["input_ids"].to(self.model.device)

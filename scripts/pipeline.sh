@@ -94,7 +94,7 @@ echo "logging to $log_file.log"
 # --main_process_port ${port} \
 
 ACCELERATE_LOG_LEVEL=info accelerate launch \
-    --config_file recipes/accelerate_configs/deepspeed_zero3.yaml \
+    --config_file recipes/accelerate_configs/deepspeed_zero3_4gpu.yaml \
     --main_process_port 2930 \
     sppo/run_sppo.py "$new_config_file" \
     --learning_rate=$LEARNING_RATE \

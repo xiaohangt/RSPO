@@ -82,6 +82,10 @@ done
 
 if [[ "$MODEL" == *"Llama"* ]]; then
     REF_MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
+elif [[ "$MODEL" == *"gemma"* ]]; then
+    REF_MODEL="google/gemma-2-2b-it"
+elif [[ "$MODEL" == *"Gemma"* ]]; then
+    REF_MODEL="google/gemma-2-2b-it"
 else
     REF_MODEL="mistralai/Mistral-7B-Instruct-v0.2"
 fi

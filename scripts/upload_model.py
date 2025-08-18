@@ -59,7 +59,8 @@ def setup_model(model_args, training_args):
         )
         model_kwargs = None
 
-    ref_model = model_args.ref_model_name_or_path
+    # ref_model = model_args.ref_model_name_or_path
+    ref_model = model_args.model_name_or_path
     ref_model_kwargs = model_kwargs
 
     # if model_args.use_peft:

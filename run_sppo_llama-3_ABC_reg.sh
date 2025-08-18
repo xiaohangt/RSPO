@@ -6,7 +6,7 @@
 # REG_COEF=0.5
 
 #### Best ForwardKL
-LOSS_TYPE=sppo_forwardimportance10
+LOSS_TYPE=sppo_forwardimportance7
 REG_COEF=0.1
 
 #### Best ForwardKL + ReverseKL
@@ -29,8 +29,10 @@ for i in $(seq 1 $iter_num); do
     PROMPT="UCLA-AGI/data-mistral-7b-instruct-sppo-iter${i}"
     OUT="data-${LOSS_TYPE}-${REG_COEF}-llama-3-8b-instruct-rspo-iter${i}"
     DATASET_DIR="synthetic_data_${LOSS_TYPE}-${REG_COEF}-llama-3-8b-instruct-rspo-iter${i}_score"
-
+    
+    # if [ "$i" -ne 1 ]; then
     bash scripts/generate.sh --model $MODEL --prompt $PROMPT --out_path $OUT
+    # fi
     bash scripts/pipeline_reg.sh --model $MODEL --iter $i \
     --dataset $DATASET_DIR \
     --output_dir $OUTPUT_DIR --num 1 --loss_type ${LOSS_TYPE} --reg_coef ${REG_COEF}

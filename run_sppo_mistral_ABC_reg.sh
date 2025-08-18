@@ -4,13 +4,14 @@ iter_num=3
 # LOSS_TYPE=sppo_reversekl
 # LOSS_TYPE=sppo_forward
 # LOSS_TYPE=sppo_chisq10
-LOSS_TYPE=sppo_forwardimportance100
+# LOSS_TYPE=sppo_forwardimportance100
 # LOSS_TYPE=sppo_forwardreverse
 # LOSS_TYPE=sppo_forward1reverse50
 # LOSS_TYPE=sppo
+LOSS_TYPE=sppo_reverseklnoent
 # REG_COEF=0.01
 # REG_COEF=0
-REG_COEF=0.1
+REG_COEF=0.5
 
 for i in $(seq 1 $iter_num); do
     echo "Running Iter ${i}"

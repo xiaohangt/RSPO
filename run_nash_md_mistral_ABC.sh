@@ -6,6 +6,11 @@
 
 set -e
 
+# Number of GPUs / accelerate processes. Override without editing:
+#   NUM_GPUS=2 bash run_nash_md_mistral_ABC.sh
+# Optional: restrict visible devices, e.g. CUDA_VISIBLE_DEVICES=0,1 NUM_GPUS=2 ...
+NUM_GPUS="${NUM_GPUS:-4}"
+
 iter_num=3
 RUN_TAG="nashmd-promptABC"
 BASE_TOKENIZER="mistralai/Mistral-7B-Instruct-v0.2"
@@ -25,6 +30,7 @@ for i in $(seq 1 $iter_num); do
 
     ACCELERATE_LOG_LEVEL=info accelerate launch \
         --config_file recipes/accelerate_configs/deepspeed_zero3_4gpu.yaml \
+        --num_processes "$NUM_GPUS" \
         --main_process_port 2931 \
         scripts/train_nash_md.py \
         --model_name_or_path "$MODEL" \

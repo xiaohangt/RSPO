@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Train with TRL NashMDTrainer (trl v1.0+ experimental) on SPPO-style scored data.
+Train with TRL NashMDTrainer (trl v1.0+ experimental).
 
-Expects the same `train.parquet` as SPPO (`chosen` / `rejected` as chat message lists).
-Only the prompt (all turns before the last assistant message in `chosen`) is used;
-Nash-MD generates completions online and scores with PairRMJudge.
+Uses prompt-only data: Nash-MD samples completions online and scores with PairRMJudge.
+Pass a Hub dataset with a string `prompt` column (e.g. UCLA-AGI/data-mistral-7b-instruct-sppo-iter{1,2,3}),
+or SPPO-style `chosen`/`rejected` chat lists (only the prompt prefix from `chosen` is used).
 """
 from __future__ import annotations
 
@@ -19,23 +19,46 @@ from trl.experimental.judges import PairRMJudge
 from trl.experimental.nash_md import NashMDConfig, NashMDTrainer
 
 
-def load_sppo_style_dataset(dataset_arg: str, hub_org: str | None) -> Dataset:
+def load_train_split(dataset_arg: str, hub_org: str | None) -> Dataset:
     """Load train split from Hub (`org/name` or `name` with hub_org) or local `.../train.parquet`."""
     local_parquet = os.path.join(dataset_arg, "train.parquet")
     if os.path.isfile(local_parquet):
-        ds = load_dataset("parquet", data_files=local_parquet, split="train")
-    elif "/" in dataset_arg:
-        ds = load_dataset(dataset_arg, split="train")
-    elif hub_org:
-        ds = load_dataset(f"{hub_org}/{dataset_arg}", split="train")
-    else:
-        ds = load_dataset(dataset_arg, split="train")
-    return ds
+        return load_dataset("parquet", data_files=local_parquet, split="train")
+    if "/" in dataset_arg:
+        return load_dataset(dataset_arg, split="train")
+    if hub_org:
+        return load_dataset(f"{hub_org}/{dataset_arg}", split="train")
+    return load_dataset(dataset_arg, split="train")
 
 
-def to_prompt_only(example: dict) -> dict:
+def to_prompt_from_chosen(example: dict) -> dict:
     chosen = example["chosen"]
     return {"prompt": chosen[:-1]}
+
+
+def to_conversational_user_prompt(example: dict) -> dict:
+    p = example["prompt"]
+    if isinstance(p, str):
+        conv = [{"role": "user", "content": p}]
+    else:
+        conv = p
+    return {"prompt": conv}
+
+
+def build_train_dataset(raw: Dataset) -> Dataset:
+    cols = set(raw.column_names)
+    if "prompt" in cols:
+        return raw.map(
+            to_conversational_user_prompt,
+            remove_columns=[c for c in raw.column_names],
+        )
+    if "chosen" in cols:
+        drop = [c for c in raw.column_names if c != "chosen"]
+        return raw.map(to_prompt_from_chosen, remove_columns=drop)
+    raise ValueError(
+        "Dataset needs a `prompt` (string or chat messages) or `chosen` column; "
+        f"got: {raw.column_names}"
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,12 +67,20 @@ def parse_args() -> argparse.Namespace:
         "--model_name_or_path",
         type=str,
         default="mistralai/Mistral-7B-Instruct-v0.2",
+        help="Policy checkpoint: base model iter 1, or output_dir from previous iter",
+    )
+    p.add_argument(
+        "--tokenizer_name_or_path",
+        type=str,
+        default=None,
+        help="If set, load tokenizer from here (e.g. base Mistral when the checkpoint has no tokenizer files)",
     )
     p.add_argument(
         "--dataset",
         type=str,
         required=True,
-        help="Hub dataset repo id, or basename used with --hub_dataset_org, or local dir containing train.parquet",
+        help="Prompt dataset: Hub id (e.g. UCLA-AGI/data-mistral-7b-instruct-sppo-iter1), "
+        "or basename with --hub_dataset_org, or local dir with train.parquet",
     )
     p.add_argument(
         "--hub_dataset_org",
@@ -76,14 +107,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    raw = load_sppo_style_dataset(args.dataset, args.hub_dataset_org if "/" not in args.dataset else None)
-    cols = set(raw.column_names)
-    if "chosen" not in cols:
-        raise ValueError(f"Dataset must contain 'chosen' (got columns {raw.column_names})")
-    drop = [c for c in raw.column_names if c != "chosen"]
-    train_dataset = raw.map(to_prompt_only, remove_columns=drop)
+    raw = load_train_split(args.dataset, args.hub_dataset_org if "/" not in args.dataset else None)
+    train_dataset = build_train_dataset(raw)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+    tok_path = args.tokenizer_name_or_path or args.model_name_or_path
+    tokenizer = AutoTokenizer.from_pretrained(tok_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 

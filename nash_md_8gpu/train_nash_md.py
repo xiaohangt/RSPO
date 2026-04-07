@@ -398,6 +398,19 @@ def parse_args() -> argparse.Namespace:
         help="Max sequence length for training batches (lower if OOM).",
     )
     p.add_argument("--logging_steps", type=int, default=10)
+    p.add_argument(
+        "--save_strategy",
+        type=str,
+        choices=("no", "epoch", "steps"),
+        default="steps",
+        help="Hugging Face TrainingArguments: when to write checkpoints under output_dir.",
+    )
+    p.add_argument(
+        "--save_steps",
+        type=int,
+        default=5,
+        help="Save a checkpoint every N optimizer steps (only if --save_strategy steps).",
+    )
     p.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument(
         "--gradient_checkpointing",
@@ -540,6 +553,8 @@ def main() -> None:
         max_new_tokens=args.max_new_tokens,
         max_length=args.max_length,
         logging_steps=args.logging_steps,
+        save_strategy=args.save_strategy,
+        save_steps=args.save_steps,
         bf16=use_bf16,
         gradient_checkpointing=effective_gradient_checkpointing,
         gradient_checkpointing_kwargs=gc_kwargs,

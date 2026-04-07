@@ -23,6 +23,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-meta-llama/Meta-Llama-3-8B-Instruct}"
 DATASET="${DATASET:-trl-lib/ultrafeedback-prompt}"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/checkpoints/nash-md-8gpu-run}"
+# Checkpointing (Hugging Face Trainer): steps | epoch | no
+SAVE_STRATEGY="${SAVE_STRATEGY:-steps}"
+SAVE_STEPS="${SAVE_STEPS:-5}"
 PREFERENCE_BACKEND="${PREFERENCE_BACKEND:-pairrm}"
 
 EXTRA_LAUNCH=(--preference_backend "${PREFERENCE_BACKEND}" --pairrm_device "${PAIRRM_DEVICE:-cpu}")
@@ -39,6 +42,7 @@ echo "TRAIN_SCRIPT=${TRAIN_SCRIPT}"
 echo "NUM_GPUS=${NUM_GPUS}  ACCELERATE_CONFIG=${ACCELERATE_CONFIG}"
 echo "MODEL_NAME_OR_PATH=${MODEL_NAME_OR_PATH}  PREFERENCE_BACKEND=${PREFERENCE_BACKEND}"
 echo "DATASET=${DATASET}  OUTPUT_DIR=${OUTPUT_DIR}"
+echo "SAVE_STRATEGY=${SAVE_STRATEGY}  SAVE_STEPS=${SAVE_STEPS}"
 
 ACCELERATE_LOG_LEVEL="${ACCELERATE_LOG_LEVEL:-info}" accelerate launch \
   --config_file "${ACCELERATE_CONFIG}" \
@@ -57,4 +61,6 @@ ACCELERATE_LOG_LEVEL="${ACCELERATE_LOG_LEVEL:-info}" accelerate launch \
   --mixture_coef "${MIXTURE_COEF:-0.5}" \
   --max_new_tokens "${MAX_NEW_TOKENS:-256}" \
   --max_length "${MAX_LENGTH:-1024}" \
+  --save_strategy "${SAVE_STRATEGY}" \
+  --save_steps "${SAVE_STEPS}" \
   "$@"

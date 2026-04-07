@@ -39,37 +39,38 @@ if stale_egg_info.exists():
     shutil.rmtree(stale_egg_info)
 
 
-# IMPORTANT: all dependencies should be listed here with their version requirements, if any.
-#   * If a dependency is fast-moving (e.g. transformers), pin to the exact version
+# Unpinned: `pip install -e .` resolves each dependency to the newest version allowed by the index
+# (and by pip’s resolver when combined with other packages). Pin locally in a requirements lock
+# file if you need reproducible builds.
 _deps = [
-    "accelerate==0.23.0",
-    "bitsandbytes==0.41.2.post2",
-    "black==23.1.0",
-    "datasets==2.14.6",
-    "deepspeed==0.12.2",
-    "einops>=0.6.1",
-    "evaluate==0.4.0",
-    "flake8>=6.0.0",
-    "hf-doc-builder>=0.4.0",
-    "hf_transfer>=0.1.4",
-    "huggingface-hub>=0.19.2,<1.0",
-    "isort>=5.12.0",
-    "ninja>=1.11.1",
-    "numpy==1.26.4",
-    "packaging>=23.0",
-    "parameterized>=0.9.0",
-    "peft==0.7.1",
-    "protobuf<=3.20.2",  # Needed to avoid conflicts with `transformers`
+    "accelerate",
+    "bitsandbytes",
+    "black",
+    "datasets",
+    "deepspeed",
+    "einops",
+    "evaluate",
+    "flake8",
+    "hf-doc-builder",
+    "hf_transfer",
+    "huggingface-hub",
+    "isort",
+    "ninja",
+    "numpy",
+    "packaging",
+    "parameterized",
+    "peft",
+    "protobuf",
     "pytest",
-    "safetensors>=0.3.3",
-    "sentencepiece>=0.1.99",
+    "safetensors",
+    "sentencepiece",
     "scipy",
     "tensorboard",
-    "torch==2.1.2",
-    "transformers==4.36.2",
-    "trl==0.7.10",
-    "jinja2>=3.0.0",
-    "tqdm>=4.64.1",
+    "torch",
+    "transformers",
+    "trl",
+    "jinja2",
+    "tqdm",
     "nltk",
 ]
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 import os
 import subprocess
 import time
@@ -156,6 +157,20 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    # Avoid "cannot re-initialize CUDA in forked subprocess" when backend uses worker processes.
+    if args.backend == "vllm":
+        os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    if torch.cuda.is_available():
+        current_method = mp.get_start_method(allow_none=True)
+        if current_method != "spawn":
+            mp.set_start_method("spawn", force=True)
+        print(f"multiprocessing_start_method={mp.get_start_method()}", flush=True)
+        if args.backend == "vllm":
+            print(
+                f"VLLM_WORKER_MULTIPROC_METHOD={os.environ.get('VLLM_WORKER_MULTIPROC_METHOD')}",
+                flush=True,
+            )
+
     t0 = time.time()
     ckpt = Path(args.checkpoint)
     if not ckpt.exists():

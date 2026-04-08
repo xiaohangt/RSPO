@@ -49,15 +49,15 @@ def _build_prompt(tokenizer, instruction: str) -> str:
 
 
 @torch.no_grad()
-def _generate_one(
+def _generate_batch_transformers(
     model,
     tokenizer,
-    prompt: str,
+    prompts: list[str],
     max_new_tokens: int,
     temperature: float,
     top_p: float,
-) -> str:
-    inputs = tokenizer(prompt, return_tensors="pt", padding=False)
+) -> list[str]:
+    inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=False)
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
     do_sample = temperature > 0
     out = model.generate(
@@ -68,9 +68,12 @@ def _generate_one(
         max_new_tokens=max_new_tokens,
         pad_token_id=tokenizer.eos_token_id,
     )
-    gen = out[0, inputs["input_ids"].shape[1] :]
-    text = tokenizer.decode(gen, skip_special_tokens=True)
-    return text.strip()
+    prompt_lens = inputs["attention_mask"].sum(dim=1).tolist()
+    texts: list[str] = []
+    for i, p_len in enumerate(prompt_lens):
+        gen = out[i, int(p_len) :]
+        texts.append(tokenizer.decode(gen, skip_special_tokens=True).strip())
+    return texts
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,6 +102,31 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--top_p", type=float, default=0.9)
     p.add_argument("--max_examples", type=int, default=-1, help="Limit examples for a quick test.")
+    p.add_argument(
+        "--generation_batch_size",
+        type=int,
+        default=16,
+        help="Batch size for generation requests. Increase if GPU memory allows.",
+    )
+    p.add_argument(
+        "--backend",
+        type=str,
+        choices=("vllm", "transformers"),
+        default="vllm",
+        help="Generation backend. vllm is recommended for multi-GPU throughput.",
+    )
+    p.add_argument(
+        "--tensor_parallel_size",
+        type=int,
+        default=8,
+        help="vLLM tensor parallel size (set to number of GPUs, e.g. 8).",
+    )
+    p.add_argument(
+        "--gpu_memory_utilization",
+        type=float,
+        default=0.92,
+        help="vLLM GPU memory utilization target.",
+    )
     p.add_argument(
         "--output_json",
         type=str,
@@ -146,7 +174,13 @@ def main() -> None:
     print(f"device={args.device} dtype={args.dtype}", flush=True)
     print(
         f"gen_cfg: max_new_tokens={args.max_new_tokens}, temperature={args.temperature}, "
-        f"top_p={args.top_p}, max_examples={args.max_examples}",
+        f"top_p={args.top_p}, max_examples={args.max_examples}, "
+        f"batch_size={args.generation_batch_size}",
+        flush=True,
+    )
+    print(
+        f"backend={args.backend}, tensor_parallel_size={args.tensor_parallel_size}, "
+        f"gpu_memory_utilization={args.gpu_memory_utilization}",
         flush=True,
     )
     print(f"output_json={out_json}", flush=True)
@@ -168,16 +202,41 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
     print(f"[1/4] Tokenizer loaded in {time.time() - t_tok:.1f}s", flush=True)
 
-    print("[2/4] Loading model checkpoint...", flush=True)
-    t_model = time.time()
-    model = AutoModelForCausalLM.from_pretrained(
-        str(ckpt),
-        torch_dtype=torch_dtype if device.type == "cuda" else torch.float32,
-        low_cpu_mem_usage=True,
-    )
-    model.to(device)
-    model.eval()
-    print(f"[2/4] Model loaded in {time.time() - t_model:.1f}s", flush=True)
+    model = None
+    llm = None
+    sampling_params = None
+    if args.backend == "transformers":
+        print("[2/4] Loading model checkpoint with Transformers...", flush=True)
+        t_model = time.time()
+        model = AutoModelForCausalLM.from_pretrained(
+            str(ckpt),
+            torch_dtype=torch_dtype if device.type == "cuda" else torch.float32,
+            low_cpu_mem_usage=True,
+            device_map="auto" if torch.cuda.is_available() and args.device.startswith("cuda") else None,
+        )
+        if not (torch.cuda.is_available() and args.device.startswith("cuda")):
+            model.to(device)
+        model.eval()
+        print(f"[2/4] Model loaded in {time.time() - t_model:.1f}s", flush=True)
+    else:
+        print("[2/4] Loading model checkpoint with vLLM...", flush=True)
+        t_model = time.time()
+        from vllm import LLM, SamplingParams
+
+        dtype_map = {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}
+        llm = LLM(
+            model=str(ckpt),
+            tokenizer=tok_path,
+            tensor_parallel_size=args.tensor_parallel_size,
+            dtype=dtype_map[args.dtype],
+            gpu_memory_utilization=args.gpu_memory_utilization,
+        )
+        sampling_params = SamplingParams(
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_tokens=args.max_new_tokens,
+        )
+        print(f"[2/4] vLLM engine ready in {time.time() - t_model:.1f}s", flush=True)
 
     print("[3/4] Loading AlpacaEval dataset...", flush=True)
     t_ds = time.time()
@@ -188,46 +247,52 @@ def main() -> None:
     t_gen = time.time()
     outputs: list[dict[str, Any]] = []
     total = len(eval_set) if args.max_examples <= 0 else min(len(eval_set), args.max_examples)
+    eval_list = [eval_set[i] for i in range(total)]
     pbar = tqdm(total=total, desc="Generating", unit="sample", dynamic_ncols=True)
-    for i, ex in enumerate(eval_set):
-        if args.max_examples > 0 and i >= args.max_examples:
-            break
-        instruction = ex["instruction"]
-        prompt = _build_prompt(tokenizer, instruction)
-        completion = _generate_one(
-            model=model,
-            tokenizer=tokenizer,
-            prompt=prompt,
-            max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
-            top_p=args.top_p,
-        )
-        # AlpacaEval expects at least these keys:
-        # - instruction (or prompt), output, generator
-        outputs.append(
-            {
-                "instruction": instruction,
-                "output": completion,
-                "generator": generator_name,
-            }
-        )
-        pbar.update(1)
-        pbar.set_postfix_str(f"last_out_chars={len(completion)}")
+    for start in range(0, total, args.generation_batch_size):
+        end = min(start + args.generation_batch_size, total)
+        batch = eval_list[start:end]
+        prompts = [_build_prompt(tokenizer, ex["instruction"]) for ex in batch]
+
+        if args.backend == "transformers":
+            completions = _generate_batch_transformers(
+                model=model,
+                tokenizer=tokenizer,
+                prompts=prompts,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
+            )
+        else:
+            req_outputs = llm.generate(prompts, sampling_params)
+            completions = [x.outputs[0].text.strip() for x in req_outputs]
+
+        for ex, completion in zip(batch, completions):
+            outputs.append(
+                {
+                    "instruction": ex["instruction"],
+                    "output": completion,
+                    "generator": generator_name,
+                }
+            )
+
+        pbar.update(len(batch))
+        pbar.set_postfix_str(f"last_out_chars={len(completions[-1]) if completions else 0}")
 
         if int(os.environ.get("LOCAL_RANK", "0")) == 0:
-            cur = i + 1
+            cur = end
             if cur <= 3:
                 print(
-                    f"Sample {cur}: prompt_len={len(prompt)} output_len={len(completion)} "
+                    f"Sample {cur}: prompt_len={len(prompts[-1]) if prompts else 0} "
+                    f"output_len={len(completions[-1]) if completions else 0} "
                     f"elapsed={time.time() - t_gen:.1f}s",
                     flush=True,
                 )
-            elif cur % 10 == 0:
+            elif cur % max(10, args.generation_batch_size) == 0:
                 per_item = (time.time() - t_gen) / cur
-                eta = per_item * (len(eval_set) - cur)
+                eta = per_item * (total - cur)
                 print(
-                    f"Generated {cur}/{len(eval_set)} | "
-                    f"{per_item:.2f}s/item | ETA {eta/60:.1f} min",
+                    f"Generated {cur}/{total} | {per_item:.2f}s/item | ETA {eta/60:.1f} min",
                     flush=True,
                 )
     pbar.close()

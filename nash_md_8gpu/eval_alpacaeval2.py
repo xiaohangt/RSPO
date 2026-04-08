@@ -222,7 +222,6 @@ def main() -> None:
                     f"elapsed={time.time() - t_gen:.1f}s",
                     flush=True,
                 )
-    pbar.close()
             elif cur % 10 == 0:
                 per_item = (time.time() - t_gen) / cur
                 eta = per_item * (len(eval_set) - cur)
@@ -231,6 +230,7 @@ def main() -> None:
                     f"{per_item:.2f}s/item | ETA {eta/60:.1f} min",
                     flush=True,
                 )
+    pbar.close()
 
     with out_json.open("w") as f:
         json.dump(outputs, f, ensure_ascii=False)

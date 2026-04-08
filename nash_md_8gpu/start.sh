@@ -1,0 +1,5 @@
+export HF_TOKEN=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
+export WANDB_API_KEY=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
+
+
+NUM_GPUS=8 bash run_nash_md_3iter_rspo.sh > log 2>&1

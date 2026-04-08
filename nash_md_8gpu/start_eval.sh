@@ -1,0 +1,1 @@
+python eval_alpacaeval2.py --checkpoint checkpoints/nashmd-rspo-3iter-llama-NashMD-Iter1/checkpoint-10 --tokenizer_name_or_path "meta-llama/Meta-Llama-3-8B-Instruct" --generator_name "nash-md-ckpt5" --max_new_tokens 512 --backend vllm --tensor_parallel_size 8 --generation_batch_size 32 --gpu_memory_utilization 0.95 --max_new_tokens 512

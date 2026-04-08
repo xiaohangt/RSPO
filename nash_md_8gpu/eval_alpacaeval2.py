@@ -36,6 +36,18 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
+def _load_alpaca_eval_dataset() -> Any:
+    """
+    datasets>=3 removed dataset loading scripts. The old call
+    load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval") now fails.
+    Fallback to loading the hosted JSON directly from the dataset repo.
+    """
+    dataset_json_url = "https://huggingface.co/datasets/tatsu-lab/alpaca_eval/resolve/main/alpaca_eval.json"
+    print(f"Trying AlpacaEval direct JSON: {dataset_json_url}", flush=True)
+    ds = load_dataset("json", data_files={"eval": dataset_json_url})
+    return ds["eval"]
+
+
 def _build_prompt(tokenizer, instruction: str) -> str:
     # AlpacaEval instructions are single-turn. Prefer chat template if present.
     try:
@@ -255,7 +267,7 @@ def main() -> None:
 
     print("[3/4] Loading AlpacaEval dataset...", flush=True)
     t_ds = time.time()
-    eval_set = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")["eval"]
+    eval_set = _load_alpaca_eval_dataset()
     print(f"[3/4] Dataset loaded in {time.time() - t_ds:.1f}s (n={len(eval_set)})", flush=True)
 
     print("[4/4] Generating outputs...", flush=True)

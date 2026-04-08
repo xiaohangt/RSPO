@@ -31,6 +31,7 @@ from typing import Any
 
 import torch
 from datasets import load_dataset
+from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -186,6 +187,8 @@ def main() -> None:
     print("[4/4] Generating outputs...", flush=True)
     t_gen = time.time()
     outputs: list[dict[str, Any]] = []
+    total = len(eval_set) if args.max_examples <= 0 else min(len(eval_set), args.max_examples)
+    pbar = tqdm(total=total, desc="Generating", unit="sample", dynamic_ncols=True)
     for i, ex in enumerate(eval_set):
         if args.max_examples > 0 and i >= args.max_examples:
             break
@@ -208,6 +211,8 @@ def main() -> None:
                 "generator": generator_name,
             }
         )
+        pbar.update(1)
+        pbar.set_postfix_str(f"last_out_chars={len(completion)}")
 
         if int(os.environ.get("LOCAL_RANK", "0")) == 0:
             cur = i + 1
@@ -217,6 +222,7 @@ def main() -> None:
                     f"elapsed={time.time() - t_gen:.1f}s",
                     flush=True,
                 )
+    pbar.close()
             elif cur % 10 == 0:
                 per_item = (time.time() - t_gen) / cur
                 eta = per_item * (len(eval_set) - cur)

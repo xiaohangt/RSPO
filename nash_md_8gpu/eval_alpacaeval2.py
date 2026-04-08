@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +127,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    t0 = time.time()
     ckpt = Path(args.checkpoint)
     if not ckpt.exists():
         raise FileNotFoundError(str(ckpt))
@@ -136,6 +138,18 @@ def main() -> None:
     out_json = Path(args.output_json) if args.output_json else ckpt / f"alpaca_eval2_outputs_{generator_name}.json"
     out_json.parent.mkdir(parents=True, exist_ok=True)
 
+    print("=== AlpacaEval2: start ===", flush=True)
+    print(f"checkpoint={ckpt}", flush=True)
+    print(f"tokenizer={tok_path}", flush=True)
+    print(f"generator_name={generator_name}", flush=True)
+    print(f"device={args.device} dtype={args.dtype}", flush=True)
+    print(
+        f"gen_cfg: max_new_tokens={args.max_new_tokens}, temperature={args.temperature}, "
+        f"top_p={args.top_p}, max_examples={args.max_examples}",
+        flush=True,
+    )
+    print(f"output_json={out_json}", flush=True)
+
     if args.dtype == "bf16":
         torch_dtype = torch.bfloat16
     elif args.dtype == "fp16":
@@ -144,11 +158,17 @@ def main() -> None:
         torch_dtype = torch.float32
 
     device = torch.device(args.device if (args.device != "cuda" or torch.cuda.is_available()) else "cpu")
+    print(f"resolved_device={device}", flush=True)
 
+    print("[1/4] Loading tokenizer...", flush=True)
+    t_tok = time.time()
     tokenizer = AutoTokenizer.from_pretrained(tok_path, padding_side="left")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    print(f"[1/4] Tokenizer loaded in {time.time() - t_tok:.1f}s", flush=True)
 
+    print("[2/4] Loading model checkpoint...", flush=True)
+    t_model = time.time()
     model = AutoModelForCausalLM.from_pretrained(
         str(ckpt),
         torch_dtype=torch_dtype if device.type == "cuda" else torch.float32,
@@ -156,9 +176,15 @@ def main() -> None:
     )
     model.to(device)
     model.eval()
+    print(f"[2/4] Model loaded in {time.time() - t_model:.1f}s", flush=True)
 
+    print("[3/4] Loading AlpacaEval dataset...", flush=True)
+    t_ds = time.time()
     eval_set = load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")["eval"]
+    print(f"[3/4] Dataset loaded in {time.time() - t_ds:.1f}s (n={len(eval_set)})", flush=True)
 
+    print("[4/4] Generating outputs...", flush=True)
+    t_gen = time.time()
     outputs: list[dict[str, Any]] = []
     for i, ex in enumerate(eval_set):
         if args.max_examples > 0 and i >= args.max_examples:
@@ -183,15 +209,34 @@ def main() -> None:
             }
         )
 
-        if (i + 1) % 25 == 0 and int(os.environ.get("LOCAL_RANK", "0")) == 0:
-            print(f"Generated {i+1} / {len(eval_set)}", flush=True)
+        if int(os.environ.get("LOCAL_RANK", "0")) == 0:
+            cur = i + 1
+            if cur <= 3:
+                print(
+                    f"Sample {cur}: prompt_len={len(prompt)} output_len={len(completion)} "
+                    f"elapsed={time.time() - t_gen:.1f}s",
+                    flush=True,
+                )
+            elif cur % 10 == 0:
+                per_item = (time.time() - t_gen) / cur
+                eta = per_item * (len(eval_set) - cur)
+                print(
+                    f"Generated {cur}/{len(eval_set)} | "
+                    f"{per_item:.2f}s/item | ETA {eta/60:.1f} min",
+                    flush=True,
+                )
 
     with out_json.open("w") as f:
         json.dump(outputs, f, ensure_ascii=False)
 
-    print(f"Wrote model outputs to {out_json}", flush=True)
+    print(
+        f"[4/4] Generation complete in {time.time() - t_gen:.1f}s; "
+        f"wrote {len(outputs)} outputs to {out_json}",
+        flush=True,
+    )
 
     if not args.run_alpaca_eval:
+        print(f"=== Done in {time.time() - t0:.1f}s (generation only) ===", flush=True)
         return
 
     # Run judging with the CLI to avoid coupling to alpaca_eval internal API variants.
@@ -207,7 +252,10 @@ def main() -> None:
         cmd.extend(args.alpaca_eval_args.strip().split())
 
     print("Running:", " ".join(cmd), flush=True)
+    t_eval = time.time()
     subprocess.run(cmd, check=True)
+    print(f"AlpacaEval judging finished in {time.time() - t_eval:.1f}s", flush=True)
+    print(f"=== Done in {time.time() - t0:.1f}s ===", flush=True)
 
 
 if __name__ == "__main__":

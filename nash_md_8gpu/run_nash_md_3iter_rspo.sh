@@ -13,7 +13,7 @@
 #
 # See https://huggingface.co/docs/trl/nash_md_trainer
 
-export OPENAI_API_KEY=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
+export OPENAI_API_KEY="${OPENAI_API_KEY:-<set-your-openai-api-key>}"
 
 set -euo pipefail
 
